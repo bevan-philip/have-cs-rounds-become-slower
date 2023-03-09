@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 	"time"
@@ -46,12 +45,18 @@ type Game struct {
 }
 
 func main() {
+	const db_file string = "csgo.db"
+	db, err := sql.Open("sqlite3", db_file)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	parseDemo("../demos/ESLOneCologne-GF-nip-vs-fnatic/ESLOneCologne-GF-fnatic-vs-nip-cache.dem", db)
+}
+
+func parseDemo(filename string, db *sql.DB) {
 	var game Game
 
-	const db_file string = "../csgo.db"
-	db, err := sql.Open("sqlite3", db_file)
-
-	const filename string = "../demos/outsiders-vs-heroic-m2-overpass.dem"
 	info, err := os.Stat(filename)
 	if err != nil {
 		log.Panic("failed to get file info: ", err)
@@ -131,8 +136,6 @@ func main() {
 	if err != nil {
 		log.Panic("failed to parse demo: ", err)
 	}
-
-	fmt.Printf("%+v\n\n", game)
 }
 
 func startParse(gs dem.GameState, round *Round, game *Game, db *sql.DB, gameId *int64, de_map string) {
@@ -208,5 +211,4 @@ func endParse(gs dem.GameState, round *Round, winningTeam common.Team, db *sql.D
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("%+v\n\n", round)
 }
