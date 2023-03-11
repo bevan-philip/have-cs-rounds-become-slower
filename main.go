@@ -35,11 +35,16 @@ type Round struct {
 	heDamage                int
 }
 
+type Player struct {
+	name      string
+	SteamID64 uint64
+}
+
 type Game struct {
 	TeamA        string
-	TeamAPlayers []string
+	TeamAPlayers []uint64
 	TeamB        string
-	TeamBPlayers []string
+	TeamBPlayers []uint64
 	date         time.Time
 	de_map       string
 }
@@ -51,7 +56,7 @@ func main() {
 		log.Panic(err)
 	}
 
-	parseDemo("../demos/ESLOneCologne-GF-nip-vs-fnatic/ESLOneCologne-GF-fnatic-vs-nip-cache.dem", db)
+	parseDemo("../demos/outsiders-vs-heroic-m1-mirage.dem", db)
 }
 
 func parseDemo(filename string, db *sql.DB) {
@@ -143,10 +148,12 @@ func startParse(gs dem.GameState, round *Round, game *Game, db *sql.DB, gameId *
 
 	if len(game.TeamAPlayers) == 0 {
 		for _, s := range gs.TeamCounterTerrorists().Members() {
-			game.TeamAPlayers = append(game.TeamAPlayers, s.Name)
+			game.TeamAPlayers = append(game.TeamAPlayers, s.SteamID64)
+			addPlayer(db, Player{s.Name, s.SteamID64})
 		}
 		for _, s := range gs.TeamTerrorists().Members() {
-			game.TeamBPlayers = append(game.TeamBPlayers, s.Name)
+			game.TeamBPlayers = append(game.TeamBPlayers, s.SteamID64)
+			addPlayer(db, Player{s.Name, s.SteamID64})
 		}
 		game.TeamA = gs.TeamCounterTerrorists().ClanName()
 		game.TeamB = gs.TeamTerrorists().ClanName()
@@ -166,6 +173,17 @@ func startParse(gs dem.GameState, round *Round, game *Game, db *sql.DB, gameId *
 		}
 	}
 	round.gameId = *gameId
+}
+
+func addPlayer(db *sql.DB, player Player) {
+	row := db.QueryRow("SELECT SteamID64 FROM players WHERE SteamID64=?", player.SteamID64)
+	var err error
+	if err = row.Scan(&player.SteamID64); err == sql.ErrNoRows {
+		_, err := db.Exec("INSERT INTO players VALUES (?, ?)", player.SteamID64, player.name)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 }
 
 func endParse(gs dem.GameState, round *Round, winningTeam common.Team, db *sql.DB) {
