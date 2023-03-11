@@ -50,6 +50,7 @@ type Game struct {
 	TeamBPlayers []uint64
 	date         time.Time
 	de_map       string
+	tickrate     int
 }
 
 func main() {
@@ -120,7 +121,7 @@ func parseDemo(filename string, db *sql.DB) {
 
 	p.RegisterEventHandler(func(e events.RoundStart) {
 		round = Round{}
-		startParse(p.GameState(), &round, &game, db, &gameId, p.Header().MapName)
+		startParse(p.GameState(), &round, &game, db, &gameId, p.Header().MapName, int(p.TickRate()))
 
 	})
 
@@ -128,7 +129,7 @@ func parseDemo(filename string, db *sql.DB) {
 		if e.NewGamePhase == common.GamePhaseGameEnded {
 			endParse(p.GameState(), &round, winningTeam, db)
 		} else if e.NewGamePhase == common.GamePhaseStartGamePhase {
-			startParse(p.GameState(), &round, &game, db, &gameId, p.Header().MapName)
+			startParse(p.GameState(), &round, &game, db, &gameId, p.Header().MapName, int(p.TickRate()))
 		}
 	})
 
@@ -167,7 +168,7 @@ func parseDemo(filename string, db *sql.DB) {
 	}
 }
 
-func startParse(gs dem.GameState, round *Round, game *Game, db *sql.DB, gameId *int64, de_map string) {
+func startParse(gs dem.GameState, round *Round, game *Game, db *sql.DB, gameId *int64, de_map string, tickrate int) {
 	round.round = gs.TotalRoundsPlayed()
 
 	if len(game.TeamAPlayers) == 0 {
@@ -183,11 +184,14 @@ func startParse(gs dem.GameState, round *Round, game *Game, db *sql.DB, gameId *
 		game.TeamB = gs.TeamTerrorists().ClanName()
 
 		game.de_map = de_map
+		if tickrate != -1 {
+			game.tickrate = tickrate
+		}
 
 		TeamAPlayersJson, _ := json.Marshal(game.TeamAPlayers)
 		TeamBPlayersJson, _ := json.Marshal(game.TeamBPlayers)
 
-		res, err := db.Exec("INSERT INTO game VALUES(NULL, ?, ?, ?, ?, ?, ?)", game.date.Format(time.RFC3339), game.TeamA, game.TeamB, string(TeamAPlayersJson), string(TeamBPlayersJson), de_map)
+		res, err := db.Exec("INSERT INTO game VALUES(NULL, ?, ?, ?, ?, ?, ?, ?)", game.date.Format(time.RFC3339), game.TeamA, game.TeamB, string(TeamAPlayersJson), string(TeamBPlayersJson), game.de_map, game.tickrate)
 		if err != nil {
 			log.Fatal(err)
 		}
