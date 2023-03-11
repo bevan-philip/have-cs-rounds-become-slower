@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	dem "github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs"
@@ -55,13 +54,15 @@ type Game struct {
 
 func main() {
 	const db_file string = "csgo.db"
-	// FYI - database/sql is thread-safe :)
+	// FYI - database/sql is thread-safe.
+	// But we'll encounter lock contention issues (SQLite only supports 1 writer).
+	// Making the database the bottleneck here.
+	// Nothing to do other than switch DBMS, unforunately.
 	db, err := sql.Open("sqlite3", db_file)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	var wg sync.WaitGroup
 	fileErr := filepath.Walk("../demos",
 		func(path string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -69,12 +70,8 @@ func main() {
 			}
 
 			if strings.HasSuffix(path, ".dem") {
-				wg.Add(1)
-				go func(path string, db *sql.DB) {
-					defer wg.Done()
-					fmt.Println("Trying to parse: ", path)
-					parseDemo(path, db)
-				}(path, db)
+				fmt.Println("Trying to parse: ", path)
+				parseDemo(path, db)
 			}
 			return nil
 		})
@@ -82,8 +79,6 @@ func main() {
 	if fileErr != nil {
 		log.Println(fileErr)
 	}
-
-	wg.Wait()
 }
 
 func parseDemo(filename string, db *sql.DB) {
@@ -142,15 +137,17 @@ func parseDemo(filename string, db *sql.DB) {
 	})
 
 	p.RegisterEventHandler(func(e events.RoundEnd) {
-		gs := p.GameState()
+		if e.WinnerState != nil {
+			gs := p.GameState()
 
-		round.endTick = gs.IngameTick()
-		round.duration = (round.endTick - round.startTick) / int(p.TickRate())
+			round.endTick = gs.IngameTick()
+			round.duration = (round.endTick - round.startTick) / int(p.TickRate())
 
-		winningTeam = e.Winner
+			winningTeam = e.Winner
 
-		round.losingSide = int(e.WinnerState.Opponent.ID())
-		round.losingTeamName = e.WinnerState.Opponent.ClanName()
+			round.losingSide = int(e.WinnerState.Opponent.ID())
+			round.losingTeamName = e.WinnerState.Opponent.ClanName()
+		}
 	})
 
 	p.RegisterEventHandler(func(e events.RoundEndOfficial) {
@@ -203,13 +200,9 @@ func startParse(gs dem.GameState, round *Round, game *Game, db *sql.DB, gameId *
 }
 
 func addPlayer(db *sql.DB, player Player) {
-	row := db.QueryRow("SELECT SteamID64 FROM players WHERE SteamID64=?", player.SteamID64)
-	var err error
-	if err = row.Scan(&player.SteamID64); err == sql.ErrNoRows {
-		_, err := db.Exec("INSERT INTO players VALUES (?, ?)", player.SteamID64, player.name)
-		if err != nil {
-			log.Fatal(err)
-		}
+	_, err := db.Exec("INSERT OR IGNORE INTO players VALUES (?, ?)", player.SteamID64, player.name)
+	if err != nil {
+		log.Fatal(err)
 	}
 }
 
