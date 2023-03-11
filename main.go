@@ -3,8 +3,12 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	dem "github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs"
@@ -51,12 +55,35 @@ type Game struct {
 
 func main() {
 	const db_file string = "csgo.db"
+	// FYI - database/sql is thread-safe :)
 	db, err := sql.Open("sqlite3", db_file)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	parseDemo("../demos/outsiders-vs-heroic-m1-mirage.dem", db)
+	var wg sync.WaitGroup
+	fileErr := filepath.Walk("../demos",
+		func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if strings.HasSuffix(path, ".dem") {
+				wg.Add(1)
+				go func(path string, db *sql.DB) {
+					defer wg.Done()
+					fmt.Println("Trying to parse: ", path)
+					parseDemo(path, db)
+				}(path, db)
+			}
+			return nil
+		})
+
+	if fileErr != nil {
+		log.Println(fileErr)
+	}
+
+	wg.Wait()
 }
 
 func parseDemo(filename string, db *sql.DB) {
