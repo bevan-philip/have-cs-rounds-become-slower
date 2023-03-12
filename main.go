@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	dem "github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs"
@@ -64,6 +65,10 @@ func main() {
 		log.Panic(err)
 	}
 
+	var wg sync.WaitGroup
+
+	mu := &sync.Mutex{}
+
 	fileErr := filepath.Walk("../demos",
 		func(path string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -71,8 +76,12 @@ func main() {
 			}
 
 			if strings.HasSuffix(path, ".dem") {
-				fmt.Println("Trying to parse: ", path)
-				parseDemo(path, db)
+				wg.Add(1)
+				go func(path string) {
+					defer wg.Done()
+					fmt.Println("Trying to parse: ", path)
+					parseDemo(path, db, mu)
+				}(path)
 			}
 			return nil
 		})
@@ -80,9 +89,10 @@ func main() {
 	if fileErr != nil {
 		log.Println(fileErr)
 	}
+	wg.Wait()
 }
 
-func parseDemo(filename string, db *sql.DB) {
+func parseDemo(filename string, db *sql.DB, mu *sync.Mutex) {
 	var game Game
 
 	info, err := os.Stat(filename)
@@ -121,15 +131,15 @@ func parseDemo(filename string, db *sql.DB) {
 
 	p.RegisterEventHandler(func(e events.RoundStart) {
 		round = Round{}
-		startParse(p.GameState(), &round, &game, db, &gameId, p.Header().MapName, int(p.TickRate()))
+		startParse(p.GameState(), &round, &game, db, &gameId, p.Header().MapName, int(p.TickRate()), mu)
 
 	})
 
 	p.RegisterEventHandler(func(e events.GamePhaseChanged) {
 		if e.NewGamePhase == common.GamePhaseGameEnded {
-			endParse(p.GameState(), &round, winningTeam, db)
+			endParse(p.GameState(), &round, winningTeam, db, mu)
 		} else if e.NewGamePhase == common.GamePhaseStartGamePhase {
-			startParse(p.GameState(), &round, &game, db, &gameId, p.Header().MapName, int(p.TickRate()))
+			startParse(p.GameState(), &round, &game, db, &gameId, p.Header().MapName, int(p.TickRate()), mu)
 		}
 	})
 
@@ -152,7 +162,7 @@ func parseDemo(filename string, db *sql.DB) {
 	})
 
 	p.RegisterEventHandler(func(e events.RoundEndOfficial) {
-		endParse(p.GameState(), &round, winningTeam, db)
+		endParse(p.GameState(), &round, winningTeam, db, mu)
 	})
 
 	p.RegisterEventHandler(func(e events.PlayerHurt) {
@@ -168,17 +178,17 @@ func parseDemo(filename string, db *sql.DB) {
 	}
 }
 
-func startParse(gs dem.GameState, round *Round, game *Game, db *sql.DB, gameId *int64, de_map string, tickrate int) {
+func startParse(gs dem.GameState, round *Round, game *Game, db *sql.DB, gameId *int64, de_map string, tickrate int, mu *sync.Mutex) {
 	round.round = gs.TotalRoundsPlayed()
 
 	if len(game.TeamAPlayers) == 0 {
 		for _, s := range gs.TeamCounterTerrorists().Members() {
 			game.TeamAPlayers = append(game.TeamAPlayers, s.SteamID64)
-			addPlayer(db, Player{s.Name, s.SteamID64})
+			addPlayer(db, Player{s.Name, s.SteamID64}, mu)
 		}
 		for _, s := range gs.TeamTerrorists().Members() {
 			game.TeamBPlayers = append(game.TeamBPlayers, s.SteamID64)
-			addPlayer(db, Player{s.Name, s.SteamID64})
+			addPlayer(db, Player{s.Name, s.SteamID64}, mu)
 		}
 		game.TeamA = gs.TeamCounterTerrorists().ClanName()
 		game.TeamB = gs.TeamTerrorists().ClanName()
@@ -188,29 +198,43 @@ func startParse(gs dem.GameState, round *Round, game *Game, db *sql.DB, gameId *
 			game.tickrate = tickrate
 		}
 
-		TeamAPlayersJson, _ := json.Marshal(game.TeamAPlayers)
-		TeamBPlayersJson, _ := json.Marshal(game.TeamBPlayers)
+		insertGame(game, db, mu, gameId)
 
-		res, err := db.Exec("INSERT INTO game VALUES(NULL, ?, ?, ?, ?, ?, ?, ?)", game.date.Format(time.RFC3339), game.TeamA, game.TeamB, string(TeamAPlayersJson), string(TeamBPlayersJson), game.de_map, game.tickrate)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		if *gameId, err = res.LastInsertId(); err != nil {
-			log.Fatal(err)
-		}
 	}
 	round.gameId = *gameId
 }
 
-func addPlayer(db *sql.DB, player Player) {
-	_, err := db.Exec("INSERT OR IGNORE INTO players VALUES (?, ?)", player.SteamID64, player.name)
+func insertGame(game *Game, db *sql.DB, mu *sync.Mutex, gameId *int64) {
+	TeamAPlayersJson, _ := json.Marshal(game.TeamAPlayers)
+	TeamBPlayersJson, _ := json.Marshal(game.TeamBPlayers)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	res, err := db.Exec("INSERT INTO game VALUES(NULL, ?, ?, ?, ?, ?, ?, ?)", game.date.Format(time.RFC3339), game.TeamA, game.TeamB, string(TeamAPlayersJson), string(TeamBPlayersJson), game.de_map, game.tickrate)
 	if err != nil {
+		log.Fatal(err)
+	}
+
+	if *gameId, err = res.LastInsertId(); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func endParse(gs dem.GameState, round *Round, winningTeam common.Team, db *sql.DB) {
+func addPlayer(db *sql.DB, player Player, mu *sync.Mutex) {
+	row := db.QueryRow("SELECT SteamID64 FROM players WHERE SteamID64=?", player.SteamID64)
+	var err error
+	if err = row.Scan(&player.SteamID64); err == sql.ErrNoRows {
+		mu.Lock()
+		defer mu.Unlock()
+		_, err := db.Exec("INSERT OR IGNORE INTO players VALUES (?, ?)", player.SteamID64, player.name)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+}
+
+func endParse(gs dem.GameState, round *Round, winningTeam common.Team, db *sql.DB, mu *sync.Mutex) {
 	round.endOfficialTick = gs.IngameTick()
 
 	for i, s := range round.killTicks {
@@ -243,11 +267,18 @@ func endParse(gs dem.GameState, round *Round, winningTeam common.Team, db *sql.D
 		}
 	}
 
+	insertRound(round, db, mu)
+}
+
+func insertRound(round *Round, db *sql.DB, mu *sync.Mutex) {
 	survivingPlayersJSON, _ := json.Marshal(round.survivingPlayers)
 	killTickJSON, _ := json.Marshal(round.killTicks)
 	smokeTickJSON, _ := json.Marshal(round.smokeTicks)
 	molotovTickJSON, _ := json.Marshal(round.molotovTicks)
 	heTickJSON, _ := json.Marshal(round.heTicks)
+
+	mu.Lock()
+	defer mu.Unlock()
 
 	_, err := db.Exec("INSERT INTO round VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", round.gameId, round.duration, round.losingTeamName, round.losingSide, round.startTick, round.endTick, round.endOfficialTick, string(survivingPlayersJSON), round.losingTeamLeftoverMoney, round.equipmentSavedValue, string(killTickJSON), string(smokeTickJSON), string(molotovTickJSON), string(heTickJSON), round.longestKillWait, round.lastKillToEnd, round.round, round.heDamage)
 	if err != nil {
