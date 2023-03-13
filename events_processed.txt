@@ -1,11 +1,11 @@
-- Rio22
 - Kato14
 - DHW14 
-- Most of Antwerp 22
-- Cologne16
+- Cologne15
+- Cluj15
 - Columbus16
+- Cologne16
+- Atlana17
 - Kato19
 - Stockholm21
-- Cluj15
-- Atlana17
-- Cologne15
+- Most of Antwerp 22
+- Rio22
