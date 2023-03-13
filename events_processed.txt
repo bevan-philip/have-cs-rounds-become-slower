@@ -5,6 +5,7 @@
 - Columbus16
 - Cologne16
 - Atlana17
+- Krakow17
 - Kato19
 - Stockholm21
 - Most of Antwerp 22
