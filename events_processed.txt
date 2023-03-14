@@ -1,4 +1,5 @@
 - Kato14
+- Cologne14
 - DHW14 
 - Cologne15
 - Cluj15
@@ -7,6 +8,7 @@
 - Atlana17
 - Krakow17
 - Kato19
+- Berlin19
 - Stockholm21
 - Most of Antwerp 22
 - Rio22
