@@ -1,6 +1,7 @@
 - Kato14
 - Cologne14
 - DHW14 
+- Katowice15
 - Cologne15
 - Cluj15
 - Columbus16
