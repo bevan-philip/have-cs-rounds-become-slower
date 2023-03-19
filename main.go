@@ -211,6 +211,9 @@ func addPlayer(db *sql.DB, player Player) {
 }
 
 func endParse(gs dem.GameState, round *Round, winningTeam common.Team, db *sql.DB) {
+	if round.duration == 0 {
+		return
+	}
 	round.endOfficialTick = gs.IngameTick()
 
 	for i, s := range round.killTicks {
