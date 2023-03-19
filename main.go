@@ -169,9 +169,12 @@ func parseDemo(filename string, db *sql.DB) {
 }
 
 func startParse(gs dem.GameState, round *Round, game *Game, db *sql.DB, gameId *int64, de_map string, tickrate int) {
+	if len(gs.TeamCounterTerrorists().Members()) == 5 && len(gs.TeamTerrorists().Members()) == 5 {
+		return
+	}
 	round.round = gs.TotalRoundsPlayed()
 
-	if len(game.TeamAPlayers) == 0 && len(gs.TeamCounterTerrorists().Members()) == 5 && len(gs.TeamTerrorists().Members()) == 5 {
+	if len(game.TeamAPlayers) == 0 {
 		for _, s := range gs.TeamCounterTerrorists().Members() {
 			game.TeamAPlayers = append(game.TeamAPlayers, s.SteamID64)
 			addPlayer(db, Player{s.Name, s.SteamID64})
