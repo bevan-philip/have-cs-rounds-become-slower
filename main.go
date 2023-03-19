@@ -26,7 +26,7 @@ type Round struct {
 	startTick               int
 	endTick                 int
 	endOfficialTick         int
-	survivingPlayers        []string
+	survivingPlayers        []uint64
 	losingTeamLeftoverMoney int
 	equipmentSavedValue     int
 	killTicks               []int
@@ -234,7 +234,7 @@ func endParse(gs dem.GameState, round *Round, winningTeam common.Team, db *sql.D
 	case common.TeamTerrorists:
 		for _, s := range gs.TeamCounterTerrorists().Members() {
 			if s.IsAlive() {
-				round.survivingPlayers = append(round.survivingPlayers, s.Name)
+				round.survivingPlayers = append(round.survivingPlayers, s.SteamID64)
 				round.equipmentSavedValue += s.EquipmentValueCurrent()
 			}
 			round.losingTeamLeftoverMoney += s.Money()
@@ -242,7 +242,7 @@ func endParse(gs dem.GameState, round *Round, winningTeam common.Team, db *sql.D
 	case common.TeamCounterTerrorists:
 		for _, s := range gs.TeamTerrorists().Members() {
 			if s.IsAlive() {
-				round.survivingPlayers = append(round.survivingPlayers, s.Name)
+				round.survivingPlayers = append(round.survivingPlayers, s.SteamID64)
 				round.equipmentSavedValue += s.EquipmentValueCurrent()
 			}
 			round.losingTeamLeftoverMoney += s.Money()
