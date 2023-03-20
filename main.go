@@ -170,7 +170,7 @@ func parseDemo(filename string, db *sql.DB) {
 }
 
 func startParse(gs dem.GameState, round *Round, game *Game, db *sql.DB, gameId *int64, de_map string, tickrate int) {
-	if len(gs.TeamCounterTerrorists().Members()) == 5 && len(gs.TeamTerrorists().Members()) == 5 {
+	if len(gs.TeamCounterTerrorists().Members()) != 5 && len(gs.TeamTerrorists().Members()) != 5 {
 		return
 	}
 	round.round = gs.TotalRoundsPlayed()
