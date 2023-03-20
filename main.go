@@ -120,9 +120,10 @@ func parseDemo(filename string, db *sql.DB) {
 	})
 
 	p.RegisterEventHandler(func(e events.RoundStart) {
-		round = Round{}
-		startParse(p.GameState(), &round, &game, db, &gameId, p.Header().MapName, int(p.TickRate()))
-
+		if p.TickRate() != 0 && p.TickRate() != float64(round.endTick) {
+			round = Round{}
+			startParse(p.GameState(), &round, &game, db, &gameId, p.Header().MapName, int(p.TickRate()))
+		}
 	})
 
 	p.RegisterEventHandler(func(e events.GamePhaseChanged) {
@@ -207,7 +208,11 @@ func startParse(gs dem.GameState, round *Round, game *Game, db *sql.DB, gameId *
 }
 
 func addPlayer(db *sql.DB, player Player) {
-	_, err := db.Exec("INSERT OR IGNORE INTO players VALUES (?, ?)", player.SteamID64, player.name)
+	_, err := db.Exec("INSERT OR IGNORE INTO players VALUES (?, ?, 0)", player.SteamID64, player.name)
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = db.Exec("UPDATE players SET apps = apps + 1 WHERE SteamID64 LIKE ?", player.SteamID64)
 	if err != nil {
 		log.Fatal(err)
 	}
