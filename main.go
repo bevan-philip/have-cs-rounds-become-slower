@@ -54,7 +54,7 @@ type Game struct {
 }
 
 func main() {
-	const db_file string = "test.db"
+	const db_file string = "csgo.db"
 	// FYI - database/sql is thread-safe.
 	// But we'll encounter lock contention issues (SQLite only supports 1 writer).
 	// Making the database the bottleneck here.
