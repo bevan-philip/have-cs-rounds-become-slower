@@ -54,7 +54,7 @@ type Game struct {
 }
 
 func main() {
-	const db_file string = "csgo.db"
+	const db_file string = "test.db"
 	// FYI - database/sql is thread-safe.
 	// But we'll encounter lock contention issues (SQLite only supports 1 writer).
 	// Making the database the bottleneck here.
@@ -120,10 +120,8 @@ func parseDemo(filename string, db *sql.DB) {
 	})
 
 	p.RegisterEventHandler(func(e events.RoundStart) {
-		if p.TickRate() != 0 && p.TickRate() != float64(round.endTick) {
-			round = Round{}
-			startParse(p.GameState(), &round, &game, db, &gameId, p.Header().MapName, int(p.TickRate()))
-		}
+		round = Round{}
+		startParse(p.GameState(), &round, &game, db, &gameId, p.Header().MapName, int(p.TickRate()))
 	})
 
 	p.RegisterEventHandler(func(e events.GamePhaseChanged) {
@@ -135,7 +133,9 @@ func parseDemo(filename string, db *sql.DB) {
 	})
 
 	p.RegisterEventHandler(func(e events.RoundFreezetimeEnd) {
-		round.startTick = p.GameState().IngameTick()
+		if round.endTick != p.GameState().IngameTick() {
+			round.startTick = p.GameState().IngameTick()
+		}
 	})
 
 	p.RegisterEventHandler(func(e events.RoundEnd) {
