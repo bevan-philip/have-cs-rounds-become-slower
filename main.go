@@ -103,6 +103,9 @@ func parseDemo(filename string, db *sql.DB) {
 	var winningTeam common.Team
 	var gameId int64
 
+	gameEnded := false
+	roundActive := false
+
 	p.RegisterEventHandler(func(e events.Kill) {
 		round.killTicks = append(round.killTicks, p.GameState().IngameTick())
 	})
@@ -120,15 +123,33 @@ func parseDemo(filename string, db *sql.DB) {
 	})
 
 	p.RegisterEventHandler(func(e events.RoundStart) {
+		roundActive = true
 		round = Round{}
+		log.Println("events.RoundStart", p.GameState().TotalRoundsPlayed())
 		startParse(p.GameState(), &round, &game, db, &gameId, p.Header().MapName, int(p.TickRate()))
 	})
 
 	p.RegisterEventHandler(func(e events.GamePhaseChanged) {
 		if e.NewGamePhase == common.GamePhaseGameEnded {
+			gameEnded = true
+			log.Println("events.GamePhaseGameEnded")
 			endParse(p.GameState(), &round, winningTeam, db)
-		} else if e.NewGamePhase == common.GamePhaseStartGamePhase {
-			startParse(p.GameState(), &round, &game, db, &gameId, p.Header().MapName, int(p.TickRate()))
+		}
+	})
+
+	p.RegisterEventHandler(func(e events.MatchStart) {
+		log.Println("events.MatchStart")
+		if !gameEnded {
+			addGame(p.GameState(), &round, &game, db, &gameId, p.Header().MapName, int(p.TickRate()))
+			roundActive = false
+		}
+	})
+
+	p.RegisterEventHandler(func(e events.MatchStartedChanged) {
+		log.Println("events.MatchStartedChanged")
+		if !gameEnded {
+			addGame(p.GameState(), &round, &game, db, &gameId, p.Header().MapName, int(p.TickRate()))
+			roundActive = false
 		}
 	})
 
@@ -153,7 +174,11 @@ func parseDemo(filename string, db *sql.DB) {
 	})
 
 	p.RegisterEventHandler(func(e events.RoundEndOfficial) {
-		endParse(p.GameState(), &round, winningTeam, db)
+		log.Println("events.RoundEndOffical", round.round)
+		if roundActive {
+			endParse(p.GameState(), &round, winningTeam, db)
+			roundActive = false
+		}
 	})
 
 	p.RegisterEventHandler(func(e events.PlayerHurt) {
@@ -175,7 +200,17 @@ func startParse(gs dem.GameState, round *Round, game *Game, db *sql.DB, gameId *
 	}
 	round.round = gs.TotalRoundsPlayed()
 
-	if len(game.TeamAPlayers) == 0 {
+	round.gameId = *gameId
+}
+
+func addGame(gs dem.GameState, round *Round, game *Game, db *sql.DB, gameId *int64, de_map string, tickrate int) bool {
+	// If we don't have 5 on either side, assume something has gone wrong.
+	if len(gs.TeamCounterTerrorists().Members()) < 5 || len(gs.TeamTerrorists().Members()) < 5 {
+		return false
+	}
+
+	if len(game.TeamAPlayers) < 5 {
+		// Store players within the game struct.
 		for _, s := range gs.TeamCounterTerrorists().Members() {
 			game.TeamAPlayers = append(game.TeamAPlayers, s.SteamID64)
 			addPlayer(db, Player{s.Name, s.SteamID64})
@@ -184,27 +219,35 @@ func startParse(gs dem.GameState, round *Round, game *Game, db *sql.DB, gameId *
 			game.TeamBPlayers = append(game.TeamBPlayers, s.SteamID64)
 			addPlayer(db, Player{s.Name, s.SteamID64})
 		}
-		game.TeamA = gs.TeamCounterTerrorists().ClanName()
-		game.TeamB = gs.TeamTerrorists().ClanName()
-
-		game.de_map = de_map
-		if tickrate != -1 {
-			game.tickrate = tickrate
-		}
-
-		TeamAPlayersJson, _ := json.Marshal(game.TeamAPlayers)
-		TeamBPlayersJson, _ := json.Marshal(game.TeamBPlayers)
-
-		res, err := db.Exec("INSERT INTO game VALUES(NULL, ?, ?, ?, ?, ?, ?, ?)", game.date.Format(time.RFC3339), game.TeamA, game.TeamB, string(TeamAPlayersJson), string(TeamBPlayersJson), game.de_map, game.tickrate)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		if *gameId, err = res.LastInsertId(); err != nil {
-			log.Fatal(err)
-		}
 	}
-	round.gameId = *gameId
+
+	TeamAPlayersJson, _ := json.Marshal(game.TeamAPlayers)
+	TeamBPlayersJson, _ := json.Marshal(game.TeamBPlayers)
+
+	game.TeamA = gs.TeamCounterTerrorists().ClanName()
+	game.TeamB = gs.TeamTerrorists().ClanName()
+
+	game.de_map = de_map
+	if tickrate != -1 {
+		game.tickrate = tickrate
+	}
+
+	// Remove any existing rounds and game entries, in case we're re-creating the game.
+	res, err := db.Exec("DELETE FROM game WHERE id = ?; DELETE FROM round WHERE game_id = ?", *gameId, *gameId)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	res, err = db.Exec("INSERT INTO game VALUES(NULL, ?, ?, ?, ?, ?, ?, ?)", game.date.Format(time.RFC3339), game.TeamA, game.TeamB, string(TeamAPlayersJson), string(TeamBPlayersJson), game.de_map, game.tickrate)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if *gameId, err = res.LastInsertId(); err != nil {
+		log.Fatal(err)
+	}
+
+	return true
 }
 
 func addPlayer(db *sql.DB, player Player) {
@@ -259,6 +302,8 @@ func endParse(gs dem.GameState, round *Round, winningTeam common.Team, db *sql.D
 	smokeTickJSON, _ := json.Marshal(round.smokeTicks)
 	molotovTickJSON, _ := json.Marshal(round.molotovTicks)
 	heTickJSON, _ := json.Marshal(round.heTicks)
+
+	log.Println("inserting round: ", round.round)
 
 	_, err := db.Exec("INSERT INTO round VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", round.gameId, round.duration, round.losingTeamName, round.losingSide, round.startTick, round.endTick, round.endOfficialTick, string(survivingPlayersJSON), round.losingTeamLeftoverMoney, round.equipmentSavedValue, string(killTickJSON), string(smokeTickJSON), string(molotovTickJSON), string(heTickJSON), round.longestKillWait, round.lastKillToEnd, round.round, round.heDamage)
 	if err != nil {
