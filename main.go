@@ -125,20 +125,17 @@ func parseDemo(filename string, db *sql.DB) {
 	p.RegisterEventHandler(func(e events.RoundStart) {
 		roundActive = true
 		round = Round{}
-		log.Println("events.RoundStart", p.GameState().TotalRoundsPlayed())
 		startParse(p.GameState(), &round, &game, db, &gameId, p.Header().MapName, int(p.TickRate()))
 	})
 
 	p.RegisterEventHandler(func(e events.GamePhaseChanged) {
 		if e.NewGamePhase == common.GamePhaseGameEnded {
 			gameEnded = true
-			log.Println("events.GamePhaseGameEnded")
 			endParse(p.GameState(), &round, winningTeam, db)
 		}
 	})
 
 	p.RegisterEventHandler(func(e events.MatchStart) {
-		log.Println("events.MatchStart")
 		if !gameEnded {
 			addGame(p.GameState(), &round, &game, db, &gameId, p.Header().MapName, int(p.TickRate()))
 			roundActive = false
@@ -146,7 +143,6 @@ func parseDemo(filename string, db *sql.DB) {
 	})
 
 	p.RegisterEventHandler(func(e events.MatchStartedChanged) {
-		log.Println("events.MatchStartedChanged")
 		if !gameEnded {
 			addGame(p.GameState(), &round, &game, db, &gameId, p.Header().MapName, int(p.TickRate()))
 			roundActive = false
@@ -174,7 +170,6 @@ func parseDemo(filename string, db *sql.DB) {
 	})
 
 	p.RegisterEventHandler(func(e events.RoundEndOfficial) {
-		log.Println("events.RoundEndOffical", round.round)
 		if roundActive {
 			endParse(p.GameState(), &round, winningTeam, db)
 			roundActive = false
@@ -302,8 +297,6 @@ func endParse(gs dem.GameState, round *Round, winningTeam common.Team, db *sql.D
 	smokeTickJSON, _ := json.Marshal(round.smokeTicks)
 	molotovTickJSON, _ := json.Marshal(round.molotovTicks)
 	heTickJSON, _ := json.Marshal(round.heTicks)
-
-	log.Println("inserting round: ", round.round)
 
 	_, err := db.Exec("INSERT INTO round VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", round.gameId, round.duration, round.losingTeamName, round.losingSide, round.startTick, round.endTick, round.endOfficialTick, string(survivingPlayersJSON), round.losingTeamLeftoverMoney, round.equipmentSavedValue, string(killTickJSON), string(smokeTickJSON), string(molotovTickJSON), string(heTickJSON), round.longestKillWait, round.lastKillToEnd, round.round, round.heDamage)
 	if err != nil {
