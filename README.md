@@ -1,7 +1,7 @@
 # Has CS become slower?
-Project to analyse CS:GO demos to understand how the game has evolved over time
+Project to analyse CS:GO demos to understand how the game has evolved over time.
 
-[Read the blog post that this project became.](https://bphilip.uk/2023/04/26/have-cs-rounds-gotten-slower)
+[Read the blog post that this project became!](https://bphilip.uk/2023/04/26/have-cs-rounds-gotten-slower)
 
 ## Structure
 - main.go 
